@@ -1,24 +1,33 @@
 use std::time::Duration;
-use tracing::{info, instrument, trace_span};
-use tracing_appender::non_blocking::NonBlocking;
-use tracing_appender::non_blocking::WorkerGuard;
+use tracing::{info, instrument, span, Level};
+use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{fmt, layer::SubscriberExt};
 
 fn main() {
     let _guard = init_tracing();
-    start_process();
+    start_processes();
 }
 
-fn start_process() {
-    let span = trace_span!("my_span", pid = std::process::id());
-    let _enter = span.enter();
-    do_something();
+fn start_processes() {
+    let span = span!(Level::TRACE, "start");
+    let _guard = span.enter();
+
+    let mut threads = Vec::new();
+    for process in std::env::args() {
+        let span = span.clone(); // cloning here in order to move the cloned spawn to another thread and have it register within it
+        threads.push(std::thread::spawn(move || {
+            span.in_scope(move || do_something(process));
+        }));
+    }
+    for t in threads {
+        t.join().unwrap();
+    }
 }
 
 #[instrument]
-fn do_something() {
+fn do_something(process_name: String) {
     for i in 0..=10 {
         info!("processed {}%", i * 10);
         std::thread::sleep(Duration::from_millis(50))
