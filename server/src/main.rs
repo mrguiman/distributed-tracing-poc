@@ -1,33 +1,35 @@
 use std::time::Duration;
-use tracing::{info, instrument, span, Level};
+use tracing::{info, instrument, span, Instrument, Level};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{fmt, layer::SubscriberExt};
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let _guard = init_tracing();
-    start_processes();
+    start_processes().await
 }
 
-fn start_processes() {
+async fn start_processes() {
     let span = span!(Level::TRACE, "start");
     let _guard = span.enter();
 
     let mut threads = Vec::new();
     for process in std::env::args() {
-        let span = span.clone(); // cloning here in order to move the cloned spawn to another thread and have it register within it
-        threads.push(std::thread::spawn(move || {
-            span.in_scope(move || do_something(process));
+        let span = span.clone();
+
+        threads.push(tokio::spawn(async move {
+            do_something(process).instrument(span).await;
         }));
     }
     for t in threads {
-        t.join().unwrap();
+        t.await.unwrap();
     }
 }
 
 #[instrument]
-fn do_something(process_name: String) {
+async fn do_something(_process_name: String) {
     for i in 0..=10 {
         info!("processed {}%", i * 10);
         std::thread::sleep(Duration::from_millis(50))
